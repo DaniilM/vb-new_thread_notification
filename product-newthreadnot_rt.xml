@@ -1,0 +1,201 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+
+<product productid="newthreadnot_rt" active="0">
+	<title>New Thread Notification</title>
+	<description>Instant email notification for new threads posted in a forum.</description>
+	<version>1.02</version>
+	<url>http://www.vbulletin.org/forum/showthread.php?t=141280</url>
+	<versioncheckurl><![CDATA[http://www.vbulletin.org/forum/misc.php?do=checkversion&t=141280]]></versioncheckurl>
+	<apm_releasedate></apm_releasedate>
+	<apm_author></apm_author>
+	<apm_relatedurl></apm_relatedurl>
+	<apm_extrainfo></apm_extrainfo>
+	<apm_extraedit></apm_extraedit>
+	<dependencies>
+		<dependency dependencytype="vbulletin" minversion="3.5.0" maxversion="" />
+	</dependencies>
+	<codes>
+	</codes>
+	<templates>
+	</templates>
+	<stylevardfns>
+	</stylevardfns>
+	<stylevars>
+	</stylevars>
+	<plugins>
+		<plugin active="1" executionorder="5">
+			<title>New Thread Notification</title>
+			<hookname>newthread_post_complete</hookname>
+			<phpcode><![CDATA[
+if ($vbulletin->options['newthreadsub_onoff'])
+{
+	$ntn_usergroupids_on = explode(",", $vbulletin->options['newthreadsub_usergroupids_on']);
+	$ntn_usergroupids_off = explode(",", $vbulletin->options['newthreadsub_usergroupids_off']);
+	if ((!$vbulletin->options['newthreadsub_usergroupids_on'] || is_member_of($vbulletin->userinfo, $ntn_usergroupids_on)) && !is_member_of($vbulletin->userinfo, $ntn_usergroupids_off))
+	{
+		$ntn_forumids_on = explode(",", $vbulletin->options['newthreadsub_forumids_on']);
+		$ntn_forumids_off = explode(",", $vbulletin->options['newthreadsub_forumids_off']);
+		if ((!$vbulletin->options['newthreadsub_forumids_on'] || in_array($foruminfo['forumid'], $ntn_forumids_on)) && !in_array($foruminfo['forumid'], $ntn_forumids_off))
+		{
+			// Pull all userids where subscription is set to 1
+			$get_subscribed = $db->query_read("
+				SELECT userid
+				FROM " . TABLE_PREFIX . "subscribeforum
+				WHERE forumid = '" . $foruminfo['forumid'] . "'
+				AND emailupdate = '1'
+			");
+			
+			// Knock all the userids together into a list
+			while($got_subscribed = $vbulletin->db->fetch_array($get_subscribed))
+			{
+				$users .= "" . $got_subscribed['userid'] . ",";
+			}
+			
+			if ($users)
+			{
+				$users = rtrim($users, ",");
+			
+				// Use the list to pull all the email addresses and usernames for those users
+	
+				$get_users = $db->query_read("
+					SELECT email, username
+					FROM " . TABLE_PREFIX . "user
+					WHERE userid IN (" . $users . ")
+				");
+				
+				// Turn off mailqueueing if requested
+				if (!$vbulletin->options['newthreadsub_mailqueue'])
+				{
+					$notsubscription_onoff = 'True';
+				}
+				else
+				{
+					$notsubscription_onoff = 'False';
+				}
+				
+				// Send out the emails or queue them, vB sorts it out
+				while($got_users = $vbulletin->db->fetch_array($get_users))
+				{
+					// Don't send it to the thread-starter
+					if ($got_users['username'] != $threadinfo['postusername'])
+					{
+						// Construct the email phrase. Must be done inside the loop to use $got_users['username'], unfortunately.
+						eval(fetch_email_phrases('newthreadsub', $forum['languageid']));
+						vbmail($got_users['email'], $subject, $message, $notsubscription = $notsubscription_onoff);
+					}
+				}
+			}
+		}
+	}
+}
+]]></phpcode>
+		</plugin>
+		<plugin active="1" executionorder="5">
+			<title>New Thread Notification</title>
+			<hookname>usersub_start</hookname>
+			<phpcode><![CDATA[
+if ($vbulletin->options['newthreadsub_onoff'])
+{
+	$ntn_usergroupids_on = explode(",", $vbulletin->options['newthreadsub_usergroupids_on']);
+	$ntn_usergroupids_off = explode(",", $vbulletin->options['newthreadsub_usergroupids_off']);
+	if ((!$vbulletin->options['newthreadsub_usergroupids_on'] || is_member_of($vbulletin->userinfo, $ntn_usergroupids_on)) && !is_member_of($vbulletin->userinfo, $ntn_usergroupids_off))
+	{
+		$ntn_forumids_on = explode(",", $vbulletin->options['newthreadsub_forumids_on']);
+		$ntn_forumids_off = explode(",", $vbulletin->options['newthreadsub_forumids_off']);
+		if ((!$vbulletin->options['newthreadsub_forumids_on'] || in_array($foruminfo[forumid], $ntn_forumids_on)) && !in_array($foruminfo[forumid], $ntn_forumids_off))
+		{
+			if ($_REQUEST['f'])
+			{
+				// Instead of editing the template or adding conditionals, just insert the option when applicable. Much cleaner.
+				$str_ntn = '<option value=\"0\" $emailselected[0]>$vbphrase[no_email_notification]</option>';
+				$str_rep = '<option value=\"1\" $emailselected[1]>$vbphrase[instant_notification_by_email]</option>';
+				$vbulletin->templatecache['subscribe_choosetype'] = str_replace($str_ntn,$str_ntn.$str_rep,$vbulletin->templatecache['subscribe_choosetype']);
+			}
+		}
+	}
+}
+]]></phpcode>
+		</plugin>
+	</plugins>
+	<phrases>
+		<phrasetype name="Email Body Text" fieldname="emailbody">
+			<phrase name="newthreadsub" date="0" username="" version=""><![CDATA[
+Dear $got_users[username],
+
+$threadinfo[postusername] has just created a new thread titled - $threadinfo[title] - in the $foruminfo[title_clean] forum of $vboptions[bbtitle], which you have subscribed to.
+
+This thread is located at:
+$vboptions[bburl]/showthread.php?p=$newpost[postid]
+
+Here is the message that has just been posted:
+***************
+$newpost[message]
+***************
+
+
+There may be other replies also, but you will not receive any more notifications unless you additionally subscribe to the thread.
+
+All the best,
+$vboptions[bbtitle]
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Unsubscription information:
+
+To unsubscribe from this forum visit the following link:
+$vboptions[bburl]/subscription.php?do=usub&f=$foruminfo[forumid]
+]]></phrase>
+		</phrasetype>
+		<phrasetype name="Email Subject Text" fieldname="emailsubject">
+			<phrase name="newthreadsub" date="0" username="" version=""><![CDATA[New thread in forum '$foruminfo[title_clean]']]></phrase>
+		</phrasetype>
+		<phrasetype name="vBulletin Settings" fieldname="vbsettings">
+			<phrase name="setting_newthreadsub_forumids_off_desc" date="0" username="" version=""><![CDATA[Enter the IDs of the forums you want to exclude from subscribing to instant new thread email notifications, separated by commas. (i.e. 1,2,3) Leave blank to not exclude forums.]]></phrase>
+			<phrase name="setting_newthreadsub_forumids_off_title" date="0" username="" version=""><![CDATA[Do NOT allow new thread notification for Forums:]]></phrase>
+			<phrase name="setting_newthreadsub_forumids_on_desc" date="0" username="" version=""><![CDATA[Enter the IDs of the forums you want to allow subscribing to instant new thread email notifications, separated by commas. (i.e. 1,2,3)<br /><br />If you only want to exclude forums instead of including them, leave this blank to allow instant new thread notifications in every forum except those listed below.]]></phrase>
+			<phrase name="setting_newthreadsub_forumids_on_title" date="0" username="" version=""><![CDATA[Allow new thread notification for Forums:]]></phrase>
+			<phrase name="setting_newthreadsub_mailqueue_desc" date="0" username="" version=""><![CDATA[Choose Yes for new thread notifications to use mailqueueing as per <a href="options.php?do=options&dogroup=email">your settings</a> (Recommended for all except very low traffic forums). Choosing No will bypass mailqueueing and send all emails instantly.]]></phrase>
+			<phrase name="setting_newthreadsub_mailqueue_title" date="0" username="" version=""><![CDATA[Use mailqueue?]]></phrase>
+			<phrase name="setting_newthreadsub_onoff_desc" date="0" username="" version=""><![CDATA[Choose Yes to enable instant email notification for new threads.]]></phrase>
+			<phrase name="setting_newthreadsub_onoff_title" date="0" username="" version=""><![CDATA[Enable new thread notifications?]]></phrase>
+			<phrase name="setting_newthreadsub_usergroupids_off_desc" date="0" username="" version=""><![CDATA[Enter the IDs of the usergroups you want to exclude from subscribing to instant new thread email notifications, separated by commas. (i.e. 1,2,3) Leave blank to not exclude usergroups.]]></phrase>
+			<phrase name="setting_newthreadsub_usergroupids_off_title" date="0" username="" version=""><![CDATA[Do NOT allow new thread notification for Usergroups:]]></phrase>
+			<phrase name="setting_newthreadsub_usergroupids_on_desc" date="0" username="" version=""><![CDATA[Enter the IDs of the usergroups you want to allow to subscribe to instant new thread email notifications, separated by commas. (i.e. 1,2,3)<br /><br />If you only want to exclude usergroups instead of including them, leave this blank to allow everyone to subscribe to instant new thread notifications except those listed below.]]></phrase>
+			<phrase name="setting_newthreadsub_usergroupids_on_title" date="0" username="" version=""><![CDATA[Allow new thread notification for Usergroups:]]></phrase>
+			<phrase name="settinggroup_newthreadsub_global" date="0" username="" version=""><![CDATA[New Thread Notification]]></phrase>
+		</phrasetype>
+	</phrases>
+	<options>
+		<settinggroup name="newthreadsub_global" displayorder="65535">
+			<setting varname="newthreadsub_onoff" displayorder="10">
+				<datatype>boolean</datatype>
+				<optioncode>yesno</optioncode>
+				<defaultvalue>1</defaultvalue>
+			</setting>
+			<setting varname="newthreadsub_usergroupids_on" displayorder="20">
+				<datatype>free</datatype>
+			</setting>
+			<setting varname="newthreadsub_usergroupids_off" displayorder="30">
+				<datatype>free</datatype>
+			</setting>
+			<setting varname="newthreadsub_forumids_on" displayorder="40">
+				<datatype>free</datatype>
+			</setting>
+			<setting varname="newthreadsub_forumids_off" displayorder="50">
+				<datatype>free</datatype>
+			</setting>
+			<setting varname="newthreadsub_mailqueue" displayorder="60">
+				<datatype>boolean</datatype>
+				<optioncode>yesno</optioncode>
+				<defaultvalue>1</defaultvalue>
+			</setting>
+		</settinggroup>
+	</options>
+	<helptopics>
+	</helptopics>
+	<cronentries>
+	</cronentries>
+	<faqentries>
+	</faqentries>
+	<templateedits>
+	</templateedits>
+</product>
